@@ -18,6 +18,7 @@ func (c *Client) SendTally(t tally.Tally, conn net.Conn) {
 	switch c.Protocol {
 	case server.UDP:
 		conn.Write(t.Bytes())
+		return
 	}
 
 	fmt.Println("Attempted to send tally with unknown protocol")
