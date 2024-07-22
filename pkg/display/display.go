@@ -1,5 +1,6 @@
 package display
 
+//go:generate go run golang.org/x/tools/cmd/stringer -type=Lamp
 type Lamp uint16
 
 const (
