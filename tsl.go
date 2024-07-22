@@ -7,22 +7,25 @@ import (
 
 func NewServer(addr string, options ...server.Option) (*server.Server, error) {
 	// Default values
-	fb := &server.Server{
+	if addr == "localhost" {
+		addr = "127.0.0.1"
+	}
+	svr := &server.Server{
 		Address:               addr,
 		Port:                  5900,
-		Protocol:              server.UCP,
+		Protocol:              server.UDP,
 		EnforcePacketLength:   false,
 		EnforcedVersionNumber: 0,
 	}
 
 	// Apply options
 	for _, op := range options {
-		err := op(fb)
+		err := op(svr)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return fb, nil
+	return svr, nil
 }
 
 func OptionUsePort(p int) server.Option {
@@ -41,6 +44,18 @@ func OptionEnforceTslVersion(version int) server.Option {
 	return func(s *server.Server) error { s.EnforcedVersionNumber = version; return nil }
 }
 
-func NewClient(addr string) *client.Client {
-	return nil
+func NewClient(addr string, options ...client.Option) (*client.Client, error) {
+	client := &client.Client{
+		Protocol: server.UDP,
+	}
+
+	// Apply options
+	for _, op := range options {
+		err := op(client)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return client, nil
 }

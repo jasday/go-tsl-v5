@@ -12,13 +12,12 @@ type Protocol string
 const (
 	dle               int = 0xFE
 	stx               int = 0x02
-	maximumPacketSize int = 2048
 	packetControlData int = 6 // 6 bytes of control data
 )
 
 const (
 	TCP Protocol = "tcp"
-	UCP Protocol = "ucp"
+	UDP Protocol = "udp"
 )
 
 type Option func(*Server) error
@@ -33,7 +32,7 @@ type Server struct {
 
 func (s *Server) Listen(callback func(tally tally.Tally, remoteAddr string)) error {
 	switch s.Protocol {
-	case UCP:
+	case UDP:
 		return s.listenUDP(callback)
 	}
 
@@ -41,7 +40,6 @@ func (s *Server) Listen(callback func(tally tally.Tally, remoteAddr string)) err
 }
 
 func (s *Server) listenUDP(callback func(tally tally.Tally, remoteAddr string)) error {
-
 	addr := net.UDPAddr{
 		Port: s.Port,
 		IP:   net.ParseIP(s.Address),
@@ -51,8 +49,8 @@ func (s *Server) listenUDP(callback func(tally tally.Tally, remoteAddr string)) 
 	if err != nil {
 		return err
 	}
-
-	p := make([]byte, maximumPacketSize)
+	fmt.Printf("Listening on  %s:%d \n", addr.IP, addr.Port)
+	p := make([]byte, tally.MaximumPacketSize)
 	for {
 		_, remoteaddr, err := ser.ReadFromUDP(p)
 		if err != nil {
