@@ -1,6 +1,8 @@
 package tsl
 
 import (
+	"net"
+
 	"github.com/jasday/go-tsl-v5/pkg/client"
 	"github.com/jasday/go-tsl-v5/pkg/server"
 )
@@ -44,9 +46,10 @@ func OptionEnforceTslVersion(version int) server.Option {
 	return func(s *server.Server) error { s.EnforcedVersionNumber = version; return nil }
 }
 
-func NewClient(addr string, options ...client.Option) (*client.Client, error) {
+func NewClient(addr string, conn net.Conn, options ...client.Option) (*client.Client, error) {
 	client := &client.Client{
 		Protocol: server.UDP,
+		Conn:     conn,
 	}
 
 	// Apply options

@@ -33,7 +33,8 @@ func TestEmptyTallyByteRepresentation(t *testing.T) {
 		},
 	}
 	want := []byte{0xe, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xc0, 0x0, 0x4, 0x0, 0x54, 0x65, 0x73, 0x74}
-	got := toTest.Bytes()
+	buf := make([]byte, 2)
+	got := toTest.Bytes(buf)
 
 	assert.Equal(t, want, got, "Byte arrays should match")
 }

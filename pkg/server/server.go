@@ -49,7 +49,7 @@ func (s *Server) listenUDP(callback func(tally tally.Tally, remoteAddr string)) 
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Listening on  %s:%d \n", addr.IP, addr.Port)
+
 	p := make([]byte, tally.MaximumPacketSize)
 	for {
 		_, remoteaddr, err := ser.ReadFromUDP(p)

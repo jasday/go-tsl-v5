@@ -12,12 +12,15 @@ type Option func(*Client) error
 
 type Client struct {
 	Protocol server.Protocol
+	Conn     net.Conn
+	buf      []byte
 }
 
-func (c *Client) SendTally(t tally.Tally, conn net.Conn) {
+func (c *Client) SendTally(t tally.Tally) {
+	c.buf = make([]byte, 2)
 	switch c.Protocol {
 	case server.UDP:
-		conn.Write(t.Bytes())
+		c.Conn.Write(t.Bytes(c.buf))
 		return
 	}
 

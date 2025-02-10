@@ -99,9 +99,8 @@ func parseDisplayMessage(buffer []byte, startIndex int, unicodeStrings bool) (*d
 	return &msg, startIndex + 6 + int(msg.Data.Length)
 }
 
-func (t *Tally) Bytes() []byte {
+func (t *Tally) Bytes(buffer []byte) []byte {
 	// Reserve the first two bits for the PBC, set later.
-	buffer := make([]byte, 2)
 	buffer = append(buffer, t.Version)
 
 	flags := byte(0)
