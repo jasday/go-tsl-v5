@@ -1,6 +1,7 @@
 package tsl
 
 import (
+	"context"
 	"net"
 
 	"github.com/jasday/go-tsl-v5/pkg/client"
@@ -36,6 +37,10 @@ func OptionUsePort(p int) server.Option {
 
 func OptionUseTCP() server.Option {
 	return func(s *server.Server) error { s.Protocol = server.TCP; return nil }
+}
+
+func OptionWithContext(ctx context.Context) server.Option {
+	return func(s *server.Server) error { s.Ctx = ctx; return nil }
 }
 
 func OptionEnforcePacketLengthCheck() server.Option {

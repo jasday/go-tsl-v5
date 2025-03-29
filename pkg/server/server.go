@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/jasday/go-tsl-v5/pkg/tally"
 )
@@ -23,6 +25,7 @@ const (
 type Option func(*Server) error
 
 type Server struct {
+	Ctx                   context.Context
 	Address               string
 	Port                  int
 	Protocol              Protocol
@@ -52,11 +55,22 @@ func (s *Server) listenUDP(callback func(tally tally.Tally, remoteAddr string)) 
 
 	p := make([]byte, tally.MaximumPacketSize)
 	for {
-		_, remoteaddr, err := ser.ReadFromUDP(p)
-		if err != nil {
-			fmt.Printf("error reading UDP packet %v", err)
-			continue
+		select {
+		case <-s.Ctx.Done():
+			return ser.Close()
+		default:
+			ser.SetReadDeadline(time.Now().Add(time.Second * 1))
+			_, remoteaddr, err := ser.ReadFromUDP(p)
+			if err != nil {
+				if e, ok := err.(net.Error); ok && e.Timeout() {
+					// if the error is a timeout, just start again
+					// This is so we can watch for context cancellations
+					continue
+				}
+				fmt.Printf("error reading UDP packet %v", err)
+				continue
+			}
+			go callback(*tally.FromBuffer(p), remoteaddr.String())
 		}
-		go callback(*tally.FromBuffer(p), remoteaddr.String())
 	}
 }
