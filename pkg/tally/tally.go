@@ -30,7 +30,7 @@ type Flags struct {
 func FromBuffer(buffer []byte) *Tally {
 	packetSize := binary.LittleEndian.Uint16(buffer[0:2])
 	if packetSize < uint16(packetControlData) {
-		return nil
+		return &Tally{}
 	}
 
 	tally := Tally{
@@ -60,7 +60,6 @@ func FromBuffer(buffer []byte) *Tally {
 			ptr = newPtr
 		}
 	}
-
 	return &tally
 }
 
