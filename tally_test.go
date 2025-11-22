@@ -1,9 +1,9 @@
-package tally
+package tsl
 
 import (
 	"testing"
 
-	"github.com/jasday/go-tsl-v5/pkg/display"
+	"github.com/jasday/go-tsl-v5/tally"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,26 +16,26 @@ func TestEmptyTallyByteRepresentation(t *testing.T) {
 			ControlData:    false,
 		},
 		Screen: 0,
-		DisplayMessages: []display.Message{
+		DisplayMessages: []tally.Message{
 			{
 				Index: 0,
-				Control: display.Control{
-					RightTally:  display.Off,
-					TextTally:   display.Off,
-					LeftTally:   display.Off,
+				Control: tally.Control{
+					RightTally:  tally.Off,
+					TextTally:   tally.Off,
+					LeftTally:   tally.Off,
 					Brightness:  3,
 					ControlData: false,
 				},
-				Data: display.Data{
+				Data: tally.Data{
 					Text: "Test",
 				},
 			},
 		},
 	}
 	want := []byte{0xe, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xc0, 0x0, 0x4, 0x0, 0x54, 0x65, 0x73, 0x74}
-	buf := make([]byte, 2)
-	got := toTest.Bytes(buf)
+	got, err := Marshal(&toTest)
 
+	assert.NoError(t, err)
 	assert.Equal(t, want, got, "Byte arrays should match")
 }
 
@@ -49,25 +49,26 @@ func TestFromBufferReturnsExpectedTally(t *testing.T) {
 			ControlData:    false,
 		},
 		Screen: 0,
-		DisplayMessages: []display.Message{
+		DisplayMessages: []tally.Message{
 			{
 				Index: 0,
-				Control: display.Control{
-					RightTally:  display.Off,
-					TextTally:   display.Off,
-					LeftTally:   display.Off,
+				Control: tally.Control{
+					RightTally:  tally.Off,
+					TextTally:   tally.Off,
+					LeftTally:   tally.Off,
 					Brightness:  3,
 					ControlData: false,
 				},
-				Data: display.Data{
+				Data: tally.Data{
 					Text: "Test",
 				},
 			},
 		},
 	}
-
-	got := FromBuffer(input)
-	compareTallies(t, want, *got)
+	var got Tally
+	err := Unmarshal(input, &got)
+	assert.NoError(t, err)
+	compareTallies(t, want, got)
 }
 
 func compareTallies(t *testing.T, tally1, tally2 Tally) {
