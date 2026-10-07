@@ -120,3 +120,20 @@ func TestUnmarshalErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestUnicodeText(t *testing.T) {
+	p := Packet{Unicode: true, Displays: []Display{{Index: 1, Text: "Hé😀"}}}
+	want := []byte{
+		0x12, 0x00, 0x00, 0x01, 0x00, 0x00,
+		0x01, 0x00, 0x00, 0x00, 0x08, 0x00,
+		'H', 0x00, 0xE9, 0x00, 0x3D, 0xD8, 0x00, 0xDE, // UTF-16LE, surrogate pair for U+1F600
+	}
+
+	got, err := Marshal(&p)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+
+	var decoded Packet
+	require.NoError(t, Unmarshal(want, &decoded))
+	assert.Equal(t, p, decoded)
+}

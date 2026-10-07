@@ -142,9 +142,20 @@ func decodeText(b []byte, unicode bool) (string, error) {
 	}
 	u := make([]uint16, len(b)/2)
 	for i := range u {
-		u[i] = uint16(b[2*i])<<8 | uint16(b[2*i+1])
+		u[i] = binary.LittleEndian.Uint16(b[2*i:])
 	}
 	return string(utf16.Decode(u)), nil
+}
+
+// appendText appends s as ASCII or UTF-16LE.
+func appendText(b []byte, s string, unicode bool) []byte {
+	if !unicode {
+		return append(b, s...)
+	}
+	for _, u := range utf16.Encode([]rune(s)) {
+		b = binary.LittleEndian.AppendUint16(b, u)
+	}
+	return b
 }
 
 // Marshal encodes p as a TSL v5 packet.
@@ -177,7 +188,7 @@ func Marshal(p *Packet) ([]byte, error) {
 			buffer = append(buffer, 0x80)
 		} else {
 			buffer = append(buffer, 0)
-			txt := []byte(d.Text)
+			txt := appendText(nil, d.Text, p.Unicode)
 			buffer = binary.LittleEndian.AppendUint16(buffer, uint16(len(txt)))
 			buffer = append(buffer, txt...)
 		}
