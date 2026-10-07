@@ -1,6 +1,7 @@
 package tsl
 
 import (
+	"encoding"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -204,4 +205,33 @@ func TestMarshalErrors(t *testing.T) {
 			assert.ErrorIs(t, err, tt.want)
 		})
 	}
+}
+
+var (
+	_ encoding.BinaryAppender    = (*Packet)(nil)
+	_ encoding.BinaryMarshaler   = (*Packet)(nil)
+	_ encoding.BinaryUnmarshaler = (*Packet)(nil)
+)
+
+func TestBinaryInterfaces(t *testing.T) {
+	b, err := testPacket.MarshalBinary()
+	require.NoError(t, err)
+	assert.Equal(t, testPacketBytes, b)
+
+	prefix := []byte{0xAA}
+	b, err = testPacket.AppendBinary(prefix)
+	require.NoError(t, err)
+	assert.Equal(t, append([]byte{0xAA}, testPacketBytes...), b)
+
+	var got Packet
+	require.NoError(t, got.UnmarshalBinary(testPacketBytes))
+	assert.Equal(t, testPacket, got)
+}
+
+func TestAppendBinaryDoesNotAllocate(t *testing.T) {
+	buf := make([]byte, 0, 64)
+	allocs := testing.AllocsPerRun(100, func() {
+		_, _ = testPacket.AppendBinary(buf[:0])
+	})
+	assert.Zero(t, allocs)
 }

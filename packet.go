@@ -180,6 +180,21 @@ func Marshal(p *Packet) ([]byte, error) {
 	return b, nil
 }
 
+// AppendBinary implements encoding.BinaryAppender.
+func (p *Packet) AppendBinary(b []byte) ([]byte, error) {
+	return p.appendTo(b)
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler.
+func (p *Packet) MarshalBinary() ([]byte, error) {
+	return p.appendTo(nil)
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler. See Unmarshal.
+func (p *Packet) UnmarshalBinary(b []byte) error {
+	return Unmarshal(b, p)
+}
+
 func (p *Packet) appendTo(b []byte) ([]byte, error) {
 	if p.ScreenControl && len(p.Displays) > 0 {
 		return nil, fmt.Errorf("%w: screen control packet cannot contain displays", ErrInvalidValue)
