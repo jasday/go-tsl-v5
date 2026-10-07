@@ -14,11 +14,18 @@ const (
 	BroadcastIndex uint16 = 0xFFFF
 	// headerSize is the size of VER, FLAGS and SCREEN.
 	headerSize = 4
+
+	flagUnicode       = 1 << 0
+	flagScreenControl = 1 << 1
+	controlDataBit    = 1 << 15
 )
 
 var (
-	// ErrInvalidSize is when the provided byte slice does not contain enough control bits
-	ErrInvalidSize = errors.New("invalid size")
+	// ErrShortPacket is returned when a buffer is shorter than the packet it declares.
+	ErrShortPacket = errors.New("tsl: short packet")
+
+	// ErrMalformed is returned when a packet's contents are inconsistent.
+	ErrMalformed = errors.New("tsl: malformed packet")
 
 	// ErrExceededMaximumPacket is returned when the resultant byte slice is too long for a UDP packet.
 	ErrExceededMaximumPacket = errors.New("tally has exceeded maximum UDP packet size")
@@ -53,70 +60,91 @@ type Display struct {
 	Text string
 }
 
-// Unmarshal parses a byte slice containing a TSL v5 packet into p.
+// Unmarshal parses the TSL v5 packet at the start of buffer into p.
+// Bytes after the packet are ignored. Reserved bits are ignored.
+// Any existing contents of p are replaced.
 func Unmarshal(buffer []byte, p *Packet) error {
-	packetSize := binary.LittleEndian.Uint16(buffer[0:2])
-	if packetSize < 6 {
-		return fmt.Errorf("%w: found length %d, should be at least %d", ErrInvalidSize, packetSize, 6)
+	if len(buffer) < 2 {
+		return fmt.Errorf("%w: need 2 bytes for byte count, have %d", ErrShortPacket, len(buffer))
+	}
+	pbc := int(binary.LittleEndian.Uint16(buffer))
+	if pbc < headerSize {
+		return fmt.Errorf("%w: byte count %d is less than header size %d", ErrMalformed, pbc, headerSize)
+	}
+	if len(buffer)-2 < pbc {
+		return fmt.Errorf("%w: byte count %d exceeds remaining %d bytes", ErrShortPacket, pbc, len(buffer)-2)
+	}
+	data := buffer[2 : 2+pbc]
+
+	*p = Packet{
+		Version:       data[0],
+		Unicode:       data[1]&flagUnicode != 0,
+		ScreenControl: data[1]&flagScreenControl != 0,
+		Screen:        binary.LittleEndian.Uint16(data[2:]),
 	}
 
-	if len(buffer) < int(packetSize) {
-		return fmt.Errorf("buffer size is inconsistent with provided packet size")
+	// Screen control data is undefined in v5.0, so the rest of the packet is ignored.
+	if p.ScreenControl {
+		return nil
 	}
 
-	p.Version = buffer[2]
-	p.Screen = binary.LittleEndian.Uint16(buffer[4:6])
-	p.Unicode = buffer[3] == 0x01
-	p.ScreenControl = buffer[3] == 0x02
-
-	if !p.ScreenControl {
-		ptr := 6
-		for {
-			if ptr > int(packetSize) || ptr >= MaxUDPPacketSize-4 {
-				break
-			}
-
-			d, newPtr := parseDisplay(buffer, ptr, p.Unicode)
-			if d != nil {
-				p.Displays = append(p.Displays, *d)
-			}
-
-			ptr = newPtr
+	for off := headerSize; off < len(data); {
+		d, n, err := parseDisplay(data[off:], p.Unicode)
+		if err != nil {
+			return fmt.Errorf("display message %d at offset %d: %w", len(p.Displays), off+2, err)
 		}
+		p.Displays = append(p.Displays, d)
+		off += n
 	}
-
 	return nil
 }
 
-func parseDisplay(buffer []byte, start int, unicode bool) (*Display, int) {
-	control := binary.LittleEndian.Uint16(buffer[start+2 : start+4])
-
+// parseDisplay parses the display message at the start of b and returns the number of bytes it used.
+func parseDisplay(b []byte, unicode bool) (Display, int, error) {
+	if len(b) < 4 {
+		return Display{}, 0, fmt.Errorf("%w: %d bytes left, need 4 for index and control", ErrMalformed, len(b))
+	}
+	control := binary.LittleEndian.Uint16(b[2:])
 	d := Display{
-		Index:      binary.LittleEndian.Uint16(buffer[start : start+2]),
-		RightTally: Lamp(control & 3),
-		TextTally:  Lamp((control >> 2) & 3),
-		LeftTally:  Lamp((control >> 4) & 3),
-		Brightness: uint8((control >> 6) & 3),
+		Index:       binary.LittleEndian.Uint16(b),
+		RightTally:  Lamp(control & 3),
+		TextTally:   Lamp(control >> 2 & 3),
+		LeftTally:   Lamp(control >> 4 & 3),
+		Brightness:  uint8(control >> 6 & 3),
+		ControlData: control&controlDataBit != 0,
+	}
+	// Control data is undefined in v5.0 and carries no payload.
+	if d.ControlData {
+		return d, 4, nil
 	}
 
-	length := 0
-	if control&0x8000 == 0 {
-		length = int(binary.LittleEndian.Uint16(buffer[start+4 : start+6]))
-		data := buffer[start+6 : start+6+length]
-		if unicode {
-			if length%2 != 0 {
-				return nil, 0
-			}
-			u := make([]uint16, length/2)
-			for i := 0; i < length; i += 2 {
-				u[i/2] = (uint16(data[i]) << 8) | uint16(data[i+1])
-			}
-			d.Text = string(utf16.Decode(u))
-		} else {
-			d.Text = string(data)
-		}
+	if len(b) < 6 {
+		return Display{}, 0, fmt.Errorf("%w: %d bytes left, need 6 for text length", ErrMalformed, len(b))
 	}
-	return &d, start + 6 + length
+	length := int(binary.LittleEndian.Uint16(b[4:]))
+	if len(b)-6 < length {
+		return Display{}, 0, fmt.Errorf("%w: text length %d exceeds remaining %d bytes", ErrMalformed, length, len(b)-6)
+	}
+	text, err := decodeText(b[6:6+length], unicode)
+	if err != nil {
+		return Display{}, 0, err
+	}
+	d.Text = text
+	return d, 6 + length, nil
+}
+
+func decodeText(b []byte, unicode bool) (string, error) {
+	if !unicode {
+		return string(b), nil
+	}
+	if len(b)%2 != 0 {
+		return "", fmt.Errorf("%w: odd UTF-16 text length %d", ErrMalformed, len(b))
+	}
+	u := make([]uint16, len(b)/2)
+	for i := range u {
+		u[i] = uint16(b[2*i])<<8 | uint16(b[2*i+1])
+	}
+	return string(utf16.Decode(u)), nil
 }
 
 // Marshal encodes p as a TSL v5 packet.
@@ -131,10 +159,10 @@ func Marshal(p *Packet) ([]byte, error) {
 
 	flags := byte(0)
 	if p.Unicode {
-		flags |= 1
+		flags |= flagUnicode
 	}
 	if p.ScreenControl {
-		flags |= 2
+		flags |= flagScreenControl
 	}
 	buffer = append(buffer, flags)
 	buffer = binary.LittleEndian.AppendUint16(buffer, p.Screen)
