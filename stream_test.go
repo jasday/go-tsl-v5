@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"slices"
 	"testing"
 	"testing/iotest"
 
@@ -47,8 +48,8 @@ func TestEncodeStuffsEveryDLE(t *testing.T) {
 func TestEncodeErrors(t *testing.T) {
 	var buf bytes.Buffer
 	enc := NewEncoder(&buf)
-	assert.ErrorIs(t, enc.Encode(nil), ErrInvalidValue)
-	assert.ErrorIs(t, enc.Encode(&Packet{Displays: []Display{{Brightness: 4}}}), ErrInvalidValue)
+	require.ErrorIs(t, enc.Encode(nil), ErrInvalidValue)
+	require.ErrorIs(t, enc.Encode(&Packet{Displays: []Display{{Brightness: 4}}}), ErrInvalidValue)
 	assert.Zero(t, buf.Len())
 
 	assert.Error(t, NewEncoder(errWriter{}).Encode(&testPacket))
@@ -129,7 +130,7 @@ func TestDecodeRecoversFromInterruptedFrame(t *testing.T) {
 
 	dec := NewDecoder(bytes.NewReader(in))
 	var got Packet
-	assert.ErrorIs(t, dec.Decode(&got), ErrMalformed)
+	require.ErrorIs(t, dec.Decode(&got), ErrMalformed)
 	require.NoError(t, dec.Decode(&got))
 	assert.Equal(t, testPacket, got)
 }
@@ -140,7 +141,7 @@ func TestDecodeRecoversFromBadEscape(t *testing.T) {
 
 	dec := NewDecoder(bytes.NewReader(in))
 	var got Packet
-	assert.ErrorIs(t, dec.Decode(&got), ErrMalformed)
+	require.ErrorIs(t, dec.Decode(&got), ErrMalformed)
 	require.NoError(t, dec.Decode(&got))
 	assert.Equal(t, testPacket, got)
 }
@@ -148,11 +149,11 @@ func TestDecodeRecoversFromBadEscape(t *testing.T) {
 func TestDecodeRecoversFromMalformedPacket(t *testing.T) {
 	// Valid framing around a packet whose text length overruns its PBC.
 	bad := []byte{dle, stx, 8, 0, 0, 0, 0, 0, 1, 0, 0, 0}
-	in := append(bad, encodeFrame(t, &testPacket)...)
+	in := slices.Concat(bad, encodeFrame(t, &testPacket))
 
 	dec := NewDecoder(bytes.NewReader(in))
 	var got Packet
-	assert.ErrorIs(t, dec.Decode(&got), ErrMalformed)
+	require.ErrorIs(t, dec.Decode(&got), ErrMalformed)
 	require.NoError(t, dec.Decode(&got))
 	assert.Equal(t, testPacket, got)
 }

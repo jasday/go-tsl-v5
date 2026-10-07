@@ -29,7 +29,7 @@ func TestUnmarshal(t *testing.T) {
 
 func TestUnmarshalDecodesFields(t *testing.T) {
 	in := []byte{
-		0x14, 0x00, // PBC 20
+		0x16, 0x00, // PBC 22
 		0x00,       // VER
 		0x00,       // FLAGS
 		0x34, 0x12, // SCREEN 0x1234
@@ -40,7 +40,7 @@ func TestUnmarshalDecodesFields(t *testing.T) {
 		// DMSG 3: index 6, empty text
 		0x06, 0x00, 0x00, 0x00, 0x00, 0x00,
 	}
-	in[0] = byte(len(in) - 2)
+	require.Len(t, in, 2+0x16)
 
 	var got Packet
 	require.NoError(t, Unmarshal(in, &got))
@@ -169,7 +169,7 @@ func TestMarshalScreenControl(t *testing.T) {
 
 func TestMarshalLampAndBrightnessBits(t *testing.T) {
 	for _, l := range []Lamp{LampOff, LampRed, LampGreen, LampAmber} {
-		for br := uint8(0); br <= 3; br++ {
+		for br := range uint8(4) {
 			p := Packet{Displays: []Display{{RightTally: l, TextTally: l, LeftTally: l, Brightness: br}}}
 			b, err := Marshal(&p)
 			require.NoError(t, err)
@@ -272,7 +272,7 @@ func TestMarshalUDPSplits(t *testing.T) {
 		assert.LessOrEqual(t, len(b), MaxUDPPacketSize)
 		var got Packet
 		require.NoError(t, Unmarshal(b, &got))
-		assert.Equal(t, 2+int(binary.LittleEndian.Uint16(b)), len(b), "packet %d byte count", i)
+		assert.Len(t, b, 2+int(binary.LittleEndian.Uint16(b)), "packet %d byte count", i)
 		assert.Equal(t, p.Version, got.Version)
 		assert.Equal(t, p.Screen, got.Screen)
 		all = append(all, got.Displays...)

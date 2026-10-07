@@ -52,7 +52,7 @@ func FuzzDecoder(f *testing.F) {
 
 func isASCII(p Packet) bool {
 	for _, d := range p.Displays {
-		for i := 0; i < len(d.Text); i++ {
+		for i := range len(d.Text) {
 			if d.Text[i] > 0x7F {
 				return false
 			}

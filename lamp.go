@@ -5,6 +5,7 @@ import "strconv"
 // Lamp is the 2-bit state of a tally lamp.
 type Lamp uint8
 
+// Tally lamp states.
 const (
 	LampOff   Lamp = 0
 	LampRed   Lamp = 1

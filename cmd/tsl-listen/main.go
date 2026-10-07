@@ -19,9 +19,9 @@ func main() {
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
-	if err := run(ctx, *proto, *addr, printPacket); err != nil {
+	err := run(ctx, *proto, *addr, printPacket)
+	stop()
+	if err != nil {
 		log.Fatal(err)
 	}
 }

@@ -27,9 +27,9 @@ func TestBuildPacket(t *testing.T) {
 	}}, p)
 
 	_, err = buildPacket(0x10000, 0, "", "off", "off", "off", 3, false)
-	assert.Error(t, err)
+	require.Error(t, err)
 	_, err = buildPacket(0, 0, "", "off", "off", "off", 4, false)
-	assert.Error(t, err)
+	require.Error(t, err)
 	_, err = buildPacket(0, 0, "", "off", "pink", "off", 3, false)
 	assert.Error(t, err)
 }
@@ -69,6 +69,6 @@ func TestSendTCP(t *testing.T) {
 }
 
 func TestSendErrors(t *testing.T) {
-	assert.Error(t, send("udp", "127.0.0.1:1", &tsl.Packet{Displays: []tsl.Display{{Brightness: 9}}}))
+	require.Error(t, send("udp", "127.0.0.1:1", &tsl.Packet{Displays: []tsl.Display{{Brightness: 9}}}))
 	assert.Error(t, send("bogus", "127.0.0.1:1", sent))
 }

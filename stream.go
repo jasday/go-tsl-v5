@@ -3,6 +3,7 @@ package tsl
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 )
@@ -16,8 +17,9 @@ const (
 
 // Encoder writes DLE/STX framed packets to a byte stream such as TCP or serial.
 type Encoder struct {
-	w   io.Writer
-	buf []byte
+	w      io.Writer
+	packet []byte
+	frame  []byte
 }
 
 // NewEncoder returns an Encoder that writes to w.
@@ -30,21 +32,19 @@ func (e *Encoder) Encode(p *Packet) error {
 	if p == nil {
 		return fmt.Errorf("%w: nil packet", ErrInvalidValue)
 	}
-	// Encode the packet after the frame header, then stuff it into place.
-	packet, err := p.appendTo(e.buf[:0])
+	packet, err := p.appendTo(e.packet[:0])
 	if err != nil {
 		return err
 	}
-	n := len(packet)
-	frame := append(packet, dle, stx)
-	for _, b := range packet[:n] {
-		frame = append(frame, b)
+	e.packet = packet
+	e.frame = append(e.frame[:0], dle, stx)
+	for _, b := range packet {
+		e.frame = append(e.frame, b)
 		if b == dle {
-			frame = append(frame, dle)
+			e.frame = append(e.frame, dle)
 		}
 	}
-	e.buf = frame
-	_, err = e.w.Write(frame[n:])
+	_, err = e.w.Write(e.frame)
 	return err
 }
 
@@ -139,7 +139,7 @@ func (d *Decoder) readUnstuffed(b []byte, n int) ([]byte, error) {
 }
 
 func unexpectedEOF(err error) error {
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		return io.ErrUnexpectedEOF
 	}
 	return err

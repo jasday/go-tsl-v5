@@ -144,9 +144,9 @@ func decodeText(b []byte, unicode bool) (string, error) {
 	if len(b)%2 != 0 {
 		return "", fmt.Errorf("%w: odd UTF-16 text length %d", ErrMalformed, len(b))
 	}
-	u := make([]uint16, len(b)/2)
-	for i := range u {
-		u[i] = binary.LittleEndian.Uint16(b[2*i:])
+	u := make([]uint16, 0, len(b)/2)
+	for i := 0; i+1 < len(b); i += 2 {
+		u = append(u, uint16(b[i])|uint16(b[i+1])<<8)
 	}
 	return string(utf16.Decode(u)), nil
 }
@@ -211,7 +211,7 @@ func MarshalUDP(p *Packet) ([][]byte, error) {
 }
 
 func finishPacket(b []byte) []byte {
-	binary.LittleEndian.PutUint16(b, uint16(len(b)-2))
+	binary.LittleEndian.PutUint16(b, uint16(len(b)-2)) //nolint:gosec // at most MaxUDPPacketSize
 	return b
 }
 
@@ -249,7 +249,7 @@ func (p *Packet) appendTo(b []byte) ([]byte, error) {
 	if pbc > 0xFFFF {
 		return nil, fmt.Errorf("%w: byte count %d exceeds 65535", ErrPacketTooLarge, pbc)
 	}
-	binary.LittleEndian.PutUint16(b[start:], uint16(pbc))
+	binary.LittleEndian.PutUint16(b[start:], uint16(pbc)) //nolint:gosec // checked above
 	return b, nil
 }
 
@@ -290,7 +290,7 @@ func (d *Display) appendTo(b []byte, unicode bool) ([]byte, error) {
 	}
 
 	if !unicode {
-		for i := 0; i < len(d.Text); i++ {
+		for i := range len(d.Text) {
 			if d.Text[i] > 0x7F {
 				return nil, fmt.Errorf("%w: non-ASCII text %q; set Packet.Unicode", ErrInvalidValue, d.Text)
 			}
@@ -303,6 +303,6 @@ func (d *Display) appendTo(b []byte, unicode bool) ([]byte, error) {
 	if length > 0xFFFF {
 		return nil, fmt.Errorf("%w: text length %d exceeds 65535", ErrPacketTooLarge, length)
 	}
-	binary.LittleEndian.PutUint16(b[lengthAt:], uint16(length))
+	binary.LittleEndian.PutUint16(b[lengthAt:], uint16(length)) //nolint:gosec // checked above
 	return b, nil
 }

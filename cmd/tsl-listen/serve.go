@@ -19,7 +19,7 @@ type Handler func(p tsl.Packet, from net.Addr)
 // Malformed packets are logged and skipped. conn is closed on return.
 func ServeUDP(ctx context.Context, conn net.PacketConn, handle Handler) error {
 	defer conn.Close()
-	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stop()
 
 	// Read up to the largest possible datagram so oversized packets are still parsed.
@@ -45,7 +45,7 @@ func ServeUDP(ctx context.Context, conn net.PacketConn, handle Handler) error {
 // until ctx is cancelled. ln and all connections are closed on return.
 func ServeTCP(ctx context.Context, ln net.Listener, handle Handler) error {
 	defer ln.Close()
-	stop := context.AfterFunc(ctx, func() { ln.Close() })
+	stop := context.AfterFunc(ctx, func() { _ = ln.Close() })
 	defer stop()
 
 	var wg sync.WaitGroup
@@ -68,7 +68,7 @@ func ServeTCP(ctx context.Context, ln net.Listener, handle Handler) error {
 
 func serveConn(ctx context.Context, conn net.Conn, handle Handler) {
 	defer conn.Close()
-	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stop()
 
 	dec := tsl.NewDecoder(conn)

@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -35,10 +36,10 @@ func main() {
 
 func buildPacket(screen, index uint, text, lh, txt, rh string, brightness uint, unicode bool) (*tsl.Packet, error) {
 	if screen > 0xFFFF || index > 0xFFFF {
-		return nil, fmt.Errorf("screen and index must be at most 65535")
+		return nil, errors.New("screen and index must be at most 65535")
 	}
 	if brightness > 3 {
-		return nil, fmt.Errorf("brightness must be 0-3")
+		return nil, errors.New("brightness must be 0-3")
 	}
 	d := tsl.Display{Index: uint16(index), Brightness: uint8(brightness), Text: text}
 	for _, l := range []struct {
