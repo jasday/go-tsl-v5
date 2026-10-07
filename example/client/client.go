@@ -33,11 +33,11 @@ func NewClient(addr string, conn net.Conn, options ...Option) (*Client, error) {
 	return client, nil
 }
 
-func (c *Client) SendTally(t *tsl.Tally) error {
+func (c *Client) SendTally(p *tsl.Packet) error {
 	c.buf = make([]byte, 2)
 	switch c.Protocol {
 	case server.UDP:
-		buf, err := tsl.Marshal(t)
+		buf, err := tsl.Marshal(p)
 		if err != nil {
 			return err
 		}

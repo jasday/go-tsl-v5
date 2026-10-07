@@ -70,7 +70,7 @@ func OptionEnforceTslVersion(version int) Option {
 	return func(s *Server) error { s.EnforcedVersionNumber = version; return nil }
 }
 
-func (s *Server) Listen(callback func(tally tsl.Tally, remoteAddr string)) error {
+func (s *Server) Listen(callback func(p tsl.Packet, remoteAddr string)) error {
 	switch s.Protocol {
 	case UDP:
 		return s.listenUDP(callback)
@@ -79,7 +79,7 @@ func (s *Server) Listen(callback func(tally tsl.Tally, remoteAddr string)) error
 	return fmt.Errorf("unknown protocol received")
 }
 
-func (s *Server) listenUDP(callback func(tally tsl.Tally, remoteAddr string)) error {
+func (s *Server) listenUDP(callback func(p tsl.Packet, remoteAddr string)) error {
 	addr := net.UDPAddr{
 		Port: s.Port,
 		IP:   net.ParseIP(s.Address),
@@ -90,7 +90,7 @@ func (s *Server) listenUDP(callback func(tally tsl.Tally, remoteAddr string)) er
 		return err
 	}
 
-	p := make([]byte, tsl.MaximumPacketSize)
+	p := make([]byte, tsl.MaxUDPPacketSize)
 	for {
 		select {
 		case <-s.Ctx.Done():
@@ -107,7 +107,7 @@ func (s *Server) listenUDP(callback func(tally tsl.Tally, remoteAddr string)) er
 				fmt.Printf("error reading UDP packet %v", err)
 				continue
 			}
-			var tally *tsl.Tally
+			var tally *tsl.Packet
 			err = tsl.Unmarshal(p, tally)
 			if err != nil {
 				fmt.Printf("error unmarshalling udp tally %v", err)
