@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	// MaxUDPPacketSize is the largest a TSL message can be when sent over UDP.
+	// MaxUDPPacketSize is the largest a TSL packet can be when sent over UDP.
 	MaxUDPPacketSize = 2048
 	// BroadcastIndex addresses all screens or all displays.
 	BroadcastIndex uint16 = 0xFFFF
@@ -30,11 +30,9 @@ var (
 	// ErrInvalidValue is returned when a Packet cannot be encoded as given.
 	ErrInvalidValue = errors.New("tsl: invalid value")
 
-	// ErrPacketTooLarge is returned when a packet or text exceeds a 16-bit byte count.
+	// ErrPacketTooLarge is returned when a packet or text exceeds a 16-bit byte count,
+	// or a single display does not fit in a UDP packet.
 	ErrPacketTooLarge = errors.New("tsl: packet too large")
-
-	// ErrExceededMaximumPacket is returned when the resultant byte slice is too long for a UDP packet.
-	ErrExceededMaximumPacket = errors.New("tally has exceeded maximum UDP packet size")
 )
 
 // Packet is a TSL v5 packet: a header followed by display messages.
@@ -165,19 +163,56 @@ func appendText(b []byte, s string, unicode bool) []byte {
 }
 
 // Marshal encodes p as a TSL v5 packet.
-// If the size exceeds the maximum UDP packet size, it returns the bytes with ErrExceededMaximumPacket.
+// The result may exceed MaxUDPPacketSize; use MarshalUDP for UDP.
 func Marshal(p *Packet) ([]byte, error) {
 	if p == nil {
 		return nil, fmt.Errorf("%w: nil packet", ErrInvalidValue)
 	}
-	b, err := p.appendTo(nil)
-	if err != nil {
-		return nil, err
+	return p.appendTo(nil)
+}
+
+// MarshalUDP encodes p as one or more packets of at most MaxUDPPacketSize bytes,
+// each to be sent as its own datagram. Displays are kept in order and are never
+// split across packets.
+func MarshalUDP(p *Packet) ([][]byte, error) {
+	if p == nil {
+		return nil, fmt.Errorf("%w: nil packet", ErrInvalidValue)
 	}
-	if len(b) > MaxUDPPacketSize {
-		return b, ErrExceededMaximumPacket
+	if p.ScreenControl || len(p.Displays) == 0 {
+		b, err := p.appendTo(nil)
+		if err != nil {
+			return nil, err
+		}
+		return [][]byte{b}, nil
 	}
-	return b, nil
+
+	header := p.appendHeader(nil)
+
+	var packets [][]byte
+	var cur []byte
+	for i := range p.Displays {
+		d, err := p.Displays[i].appendTo(nil, p.Unicode)
+		if err != nil {
+			return nil, fmt.Errorf("display message %d: %w", i, err)
+		}
+		if len(header)+len(d) > MaxUDPPacketSize {
+			return nil, fmt.Errorf("%w: display message %d is %d bytes, too large for a UDP packet", ErrPacketTooLarge, i, len(d))
+		}
+		if cur != nil && len(cur)+len(d) > MaxUDPPacketSize {
+			packets = append(packets, finishPacket(cur))
+			cur = nil
+		}
+		if cur == nil {
+			cur = append(make([]byte, 0, MaxUDPPacketSize), header...)
+		}
+		cur = append(cur, d...)
+	}
+	return append(packets, finishPacket(cur)), nil
+}
+
+func finishPacket(b []byte) []byte {
+	binary.LittleEndian.PutUint16(b, uint16(len(b)-2))
+	return b
 }
 
 // AppendBinary implements encoding.BinaryAppender.
@@ -201,18 +236,7 @@ func (p *Packet) appendTo(b []byte) ([]byte, error) {
 	}
 
 	start := len(b)
-	// The PBC is filled in once the packet length is known.
-	b = append(b, 0, 0, p.Version)
-
-	flags := byte(0)
-	if p.Unicode {
-		flags |= flagUnicode
-	}
-	if p.ScreenControl {
-		flags |= flagScreenControl
-	}
-	b = append(b, flags)
-	b = binary.LittleEndian.AppendUint16(b, p.Screen)
+	b = p.appendHeader(b)
 
 	for i := range p.Displays {
 		var err error
@@ -227,6 +251,19 @@ func (p *Packet) appendTo(b []byte) ([]byte, error) {
 	}
 	binary.LittleEndian.PutUint16(b[start:], uint16(pbc))
 	return b, nil
+}
+
+// appendHeader appends PBC (zero, filled in later), VER, FLAGS and SCREEN.
+func (p *Packet) appendHeader(b []byte) []byte {
+	flags := byte(0)
+	if p.Unicode {
+		flags |= flagUnicode
+	}
+	if p.ScreenControl {
+		flags |= flagScreenControl
+	}
+	b = append(b, 0, 0, p.Version, flags)
+	return binary.LittleEndian.AppendUint16(b, p.Screen)
 }
 
 func (d *Display) appendTo(b []byte, unicode bool) ([]byte, error) {

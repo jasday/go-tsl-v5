@@ -2,6 +2,7 @@ package tsl
 
 import (
 	"encoding"
+	"encoding/binary"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -234,4 +235,67 @@ func TestAppendBinaryDoesNotAllocate(t *testing.T) {
 		_, _ = testPacket.AppendBinary(buf[:0])
 	})
 	assert.Zero(t, allocs)
+}
+
+func TestMarshalAllowsPacketsOverUDPLimit(t *testing.T) {
+	b, err := Marshal(&Packet{Displays: []Display{{Text: string(make([]byte, 3000))}}})
+	require.NoError(t, err)
+	assert.Len(t, b, 6+6+3000)
+}
+
+func TestMarshalUDPSingle(t *testing.T) {
+	got, err := MarshalUDP(&testPacket)
+	require.NoError(t, err)
+	assert.Equal(t, [][]byte{testPacketBytes}, got)
+}
+
+func TestMarshalUDPHeaderOnly(t *testing.T) {
+	got, err := MarshalUDP(&Packet{ScreenControl: true})
+	require.NoError(t, err)
+	assert.Equal(t, [][]byte{{4, 0, 0, 2, 0, 0}}, got)
+}
+
+func TestMarshalUDPSplits(t *testing.T) {
+	// Each display is 6+94 = 100 bytes, so 20 fit after the 6-byte header.
+	text := string(make([]byte, 94))
+	p := Packet{Version: 1, Unicode: false, Screen: 7}
+	for i := range 45 {
+		p.Displays = append(p.Displays, Display{Index: uint16(i), Brightness: 3, Text: text})
+	}
+
+	packets, err := MarshalUDP(&p)
+	require.NoError(t, err)
+	require.Len(t, packets, 3)
+
+	var all []Display
+	for i, b := range packets {
+		assert.LessOrEqual(t, len(b), MaxUDPPacketSize)
+		var got Packet
+		require.NoError(t, Unmarshal(b, &got))
+		assert.Equal(t, 2+int(binary.LittleEndian.Uint16(b)), len(b), "packet %d byte count", i)
+		assert.Equal(t, p.Version, got.Version)
+		assert.Equal(t, p.Screen, got.Screen)
+		all = append(all, got.Displays...)
+	}
+	assert.Len(t, packets[0], 6+20*100)
+	assert.Equal(t, p.Displays, all)
+}
+
+func TestMarshalUDPErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		p    *Packet
+		want error
+	}{
+		{"nil", nil, ErrInvalidValue},
+		{"invalid display", &Packet{Displays: []Display{{Brightness: 9}}}, ErrInvalidValue},
+		{"screen control with displays", &Packet{ScreenControl: true, Displays: []Display{{}}}, ErrInvalidValue},
+		{"display too large", &Packet{Displays: []Display{{Text: string(make([]byte, MaxUDPPacketSize))}}}, ErrPacketTooLarge},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := MarshalUDP(tt.p)
+			assert.ErrorIs(t, err, tt.want)
+		})
+	}
 }
