@@ -27,6 +27,12 @@ var (
 	// ErrMalformed is returned when a packet's contents are inconsistent.
 	ErrMalformed = errors.New("tsl: malformed packet")
 
+	// ErrInvalidValue is returned when a Packet cannot be encoded as given.
+	ErrInvalidValue = errors.New("tsl: invalid value")
+
+	// ErrPacketTooLarge is returned when a packet or text exceeds a 16-bit byte count.
+	ErrPacketTooLarge = errors.New("tsl: packet too large")
+
 	// ErrExceededMaximumPacket is returned when the resultant byte slice is too long for a UDP packet.
 	ErrExceededMaximumPacket = errors.New("tally has exceeded maximum UDP packet size")
 )
@@ -162,11 +168,26 @@ func appendText(b []byte, s string, unicode bool) []byte {
 // If the size exceeds the maximum UDP packet size, it returns the bytes with ErrExceededMaximumPacket.
 func Marshal(p *Packet) ([]byte, error) {
 	if p == nil {
-		return nil, errors.New("nil packet provided")
+		return nil, fmt.Errorf("%w: nil packet", ErrInvalidValue)
 	}
-	// Reserve the first two bytes for the PBC, set later.
-	buffer := make([]byte, 2, MaxUDPPacketSize)
-	buffer = append(buffer, p.Version)
+	b, err := p.appendTo(nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > MaxUDPPacketSize {
+		return b, ErrExceededMaximumPacket
+	}
+	return b, nil
+}
+
+func (p *Packet) appendTo(b []byte) ([]byte, error) {
+	if p.ScreenControl && len(p.Displays) > 0 {
+		return nil, fmt.Errorf("%w: screen control packet cannot contain displays", ErrInvalidValue)
+	}
+
+	start := len(b)
+	// The PBC is filled in once the packet length is known.
+	b = append(b, 0, 0, p.Version)
 
 	flags := byte(0)
 	if p.Unicode {
@@ -175,29 +196,61 @@ func Marshal(p *Packet) ([]byte, error) {
 	if p.ScreenControl {
 		flags |= flagScreenControl
 	}
-	buffer = append(buffer, flags)
-	buffer = binary.LittleEndian.AppendUint16(buffer, p.Screen)
+	b = append(b, flags)
+	b = binary.LittleEndian.AppendUint16(b, p.Screen)
 
-	for _, d := range p.Displays {
-		buffer = binary.LittleEndian.AppendUint16(buffer, d.Index)
-
-		tf := uint8(d.RightTally) | uint8(d.TextTally)<<2 | uint8(d.LeftTally)<<4 | d.Brightness<<6
-		buffer = append(buffer, tf)
-
-		if d.ControlData {
-			buffer = append(buffer, 0x80)
-		} else {
-			buffer = append(buffer, 0)
-			txt := appendText(nil, d.Text, p.Unicode)
-			buffer = binary.LittleEndian.AppendUint16(buffer, uint16(len(txt)))
-			buffer = append(buffer, txt...)
+	for i := range p.Displays {
+		var err error
+		if b, err = p.Displays[i].appendTo(b, p.Unicode); err != nil {
+			return nil, fmt.Errorf("display message %d: %w", i, err)
 		}
 	}
 
-	binary.LittleEndian.PutUint16(buffer, uint16(len(buffer)-2))
-
-	if len(buffer) > MaxUDPPacketSize {
-		return buffer, ErrExceededMaximumPacket
+	pbc := len(b) - start - 2
+	if pbc > 0xFFFF {
+		return nil, fmt.Errorf("%w: byte count %d exceeds 65535", ErrPacketTooLarge, pbc)
 	}
-	return buffer, nil
+	binary.LittleEndian.PutUint16(b[start:], uint16(pbc))
+	return b, nil
+}
+
+func (d *Display) appendTo(b []byte, unicode bool) ([]byte, error) {
+	for _, l := range []Lamp{d.RightTally, d.TextTally, d.LeftTally} {
+		if l > LampAmber {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidValue, l)
+		}
+	}
+	if d.Brightness > 3 {
+		return nil, fmt.Errorf("%w: brightness %d is greater than 3", ErrInvalidValue, d.Brightness)
+	}
+
+	control := uint16(d.RightTally) | uint16(d.TextTally)<<2 | uint16(d.LeftTally)<<4 | uint16(d.Brightness)<<6
+	if d.ControlData {
+		if d.Text != "" {
+			return nil, fmt.Errorf("%w: control data message cannot contain text", ErrInvalidValue)
+		}
+		control |= controlDataBit
+	}
+	b = binary.LittleEndian.AppendUint16(b, d.Index)
+	b = binary.LittleEndian.AppendUint16(b, control)
+	if d.ControlData {
+		return b, nil
+	}
+
+	if !unicode {
+		for i := 0; i < len(d.Text); i++ {
+			if d.Text[i] > 0x7F {
+				return nil, fmt.Errorf("%w: non-ASCII text %q; set Packet.Unicode", ErrInvalidValue, d.Text)
+			}
+		}
+	}
+
+	lengthAt := len(b)
+	b = appendText(append(b, 0, 0), d.Text, unicode)
+	length := len(b) - lengthAt - 2
+	if length > 0xFFFF {
+		return nil, fmt.Errorf("%w: text length %d exceeds 65535", ErrPacketTooLarge, length)
+	}
+	binary.LittleEndian.PutUint16(b[lengthAt:], uint16(length))
+	return b, nil
 }

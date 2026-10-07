@@ -137,3 +137,71 @@ func TestUnicodeText(t *testing.T) {
 	require.NoError(t, Unmarshal(want, &decoded))
 	assert.Equal(t, p, decoded)
 }
+
+func TestMarshalEncodesFields(t *testing.T) {
+	p := Packet{
+		Version: 1,
+		Screen:  0x1234,
+		Displays: []Display{
+			{Index: BroadcastIndex, RightTally: LampRed, TextTally: LampGreen, LeftTally: LampAmber, Brightness: 2, Text: "AB"},
+			{Index: 5, ControlData: true},
+			{Index: 6},
+		},
+	}
+	want := []byte{
+		0x16, 0x00, 0x01, 0x00, 0x34, 0x12,
+		0xFF, 0xFF, 0b10_11_10_01, 0x00, 0x02, 0x00, 'A', 'B',
+		0x05, 0x00, 0x00, 0x80,
+		0x06, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+	got, err := Marshal(&p)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+}
+
+func TestMarshalScreenControl(t *testing.T) {
+	got, err := Marshal(&Packet{ScreenControl: true, Screen: BroadcastIndex})
+	require.NoError(t, err)
+	assert.Equal(t, []byte{4, 0, 0, 2, 0xFF, 0xFF}, got)
+}
+
+func TestMarshalLampAndBrightnessBits(t *testing.T) {
+	for _, l := range []Lamp{LampOff, LampRed, LampGreen, LampAmber} {
+		for br := uint8(0); br <= 3; br++ {
+			p := Packet{Displays: []Display{{RightTally: l, TextTally: l, LeftTally: l, Brightness: br}}}
+			b, err := Marshal(&p)
+			require.NoError(t, err)
+			assert.Equal(t, byte(l)|byte(l)<<2|byte(l)<<4|br<<6, b[8])
+			assert.Equal(t, byte(0), b[9])
+
+			var got Packet
+			require.NoError(t, Unmarshal(b, &got))
+			assert.Equal(t, p, got)
+		}
+	}
+}
+
+func TestMarshalErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		p    *Packet
+		want error
+	}{
+		{"nil", nil, ErrInvalidValue},
+		{"right tally", &Packet{Displays: []Display{{RightTally: 4}}}, ErrInvalidValue},
+		{"text tally", &Packet{Displays: []Display{{TextTally: 4}}}, ErrInvalidValue},
+		{"left tally", &Packet{Displays: []Display{{LeftTally: 4}}}, ErrInvalidValue},
+		{"brightness", &Packet{Displays: []Display{{Brightness: 4}}}, ErrInvalidValue},
+		{"control data with text", &Packet{Displays: []Display{{ControlData: true, Text: "x"}}}, ErrInvalidValue},
+		{"screen control with displays", &Packet{ScreenControl: true, Displays: []Display{{}}}, ErrInvalidValue},
+		{"non-ASCII text", &Packet{Displays: []Display{{Text: "é"}}}, ErrInvalidValue},
+		{"text too long", &Packet{Displays: []Display{{Text: string(make([]byte, 0x10000))}}}, ErrPacketTooLarge},
+		{"packet too long", &Packet{Displays: []Display{{Text: string(make([]byte, 0xFFFF))}}}, ErrPacketTooLarge},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Marshal(tt.p)
+			assert.ErrorIs(t, err, tt.want)
+		})
+	}
+}
